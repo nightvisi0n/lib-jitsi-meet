@@ -1,11 +1,10 @@
-/* global $, Strophe, callstats */
+/* global callstats, Strophe */
 const logger = require('jitsi-meet-logger').getLogger(__filename);
 const GlobalOnErrorHandler = require('../util/GlobalOnErrorHandler');
 
+import RTCBrowserType from '../RTC/RTCBrowserType';
 import Settings from '../settings/Settings';
 
-const jsSHA = require('jssha');
-const io = require('socket.io-client');
 
 /**
  * We define enumeration of wrtcFuncNames as we need them before
@@ -98,7 +97,17 @@ function tryCatch(f) {
 const CallStats = tryCatch(function(jingleSession, options) {
     try {
         CallStats.feedbackEnabled = false;
-        callStats = new callstats($, io, jsSHA); // eslint-disable-line new-cap
+
+        // In React-Native we need to import the callstats module, but imports
+        // are only allowed at top-level, so we must use require here. Sigh.
+        let CallStatsMod;
+
+        if (RTCBrowserType.isReactNative()) {
+            CallStatsMod = require('react-native-callstats/callstats');
+        } else {
+            CallStatsMod = callstats;
+        }
+        callStats = new CallStatsMod();
 
         this.peerconnection = jingleSession.peerconnection.peerconnection;
 
@@ -116,7 +125,8 @@ const CallStats = tryCatch(function(jingleSession, options) {
         CallStats.initializeInProgress = true;
 
         // userID is generated or given by the origin server
-        callStats.initialize(this.callStatsID,
+        callStats.initialize(
+            this.callStatsID,
             this.callStatsSecret,
             this.userID,
             initCallback.bind(this));

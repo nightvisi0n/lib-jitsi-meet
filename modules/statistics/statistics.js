@@ -7,6 +7,8 @@ import JitsiTrackError from '../../JitsiTrackError';
 const logger = require('jitsi-meet-logger').getLogger(__filename);
 const LocalStats = require('./LocalStatsCollector.js');
 const RTPStats = require('./RTPStatsCollector.js');
+
+import RTCBrowserType from '../RTC/RTCBrowserType';
 const ScriptUtil = require('../util/ScriptUtil');
 
 import * as StatisticsEvents from '../../service/statistics/Events';
@@ -102,10 +104,10 @@ function Statistics(xmpp, options) {
             // of callstats.io may be disabled because of globally-disallowed
             // requests to any third parties.
             && (Statistics.disableThirdPartyRequests !== true);
-    if (this.callStatsIntegrationEnabled) {
+    if (this.callStatsIntegrationEnabled && !RTCBrowserType.isReactNative()) {
         loadCallStatsAPI(this.options.callStatsCustomScriptUrl);
     }
-    this.callStats = null;
+    this.callstats = null;
 
     // Flag indicates whether or not the CallStats have been started for this
     // Statistics instance

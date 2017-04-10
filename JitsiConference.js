@@ -217,7 +217,7 @@ JitsiConference.prototype._init = function(options = {}) {
             callStatsSecret: this.options.config.callStatsSecret,
             callStatsConfIDNamespace:
                 this.options.config.callStatsConfIDNamespace
-                    || window.location.hostname,
+                    || this.options.config.hosts.domain,
             callStatsCustomScriptUrl:
                 this.options.config.callStatsCustomScriptUrl,
             roomName: this.options.name
@@ -1307,6 +1307,7 @@ JitsiConference.prototype.onIncomingCall
         // do not wait for XMPPEvents.PEERCONNECTION_READY, as it may never
         // happen in case if user doesn't have or denied permission to
         // both camera and microphone.
+        logger.info('Starting CallStats');
         this.statistics.startCallStats(jingleSession);
         this._startRemoteStats();
     } catch (e) {
