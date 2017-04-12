@@ -125,11 +125,20 @@ const CallStats = tryCatch(function(jingleSession, options) {
         CallStats.initializeInProgress = true;
 
         // userID is generated or given by the origin server
-        callStats.initialize(
-            this.callStatsID,
-            this.callStatsSecret,
-            this.userID,
-            initCallback.bind(this));
+        if (RTCBrowserType.isReactNative()) {
+            this.userID = this.userID.userName;
+            callStats.initialize(
+                this.callStatsID,
+                tokenGenerator(null, this.userID),
+                this.userID,
+                initCallback.bind(this));
+        } else {
+            callStats.initialize(
+                this.callStatsID,
+                this.callStatsSecret,
+                this.userID,
+                initCallback.bind(this));
+        }
 
     } catch (e) {
         // The callstats.io API failed to initialize (e.g. because its download
@@ -567,6 +576,52 @@ function initCallback(err, msg) {
         }, this);
         CallStats.reportsQueue.length = 0;
     }
+}
+
+/**
+ * TODO
+ *
+ * @private
+ */
+function tokenGenerator(initialToken, userId) {
+    let cached = null;
+
+    if (initialToken) {
+        cached = initialToken;
+    }
+
+    // forceNew = set to true if application should generate new token and false
+    // if it's okay to use cached token
+    // callback(error, token). error should be set to non-null if there was an
+    // non-recoverable error. Token should be the JWT. Please see section
+    // "Third-party Authentication" for more complete documentation
+    return function(forceNew, callback) {
+        if (!forceNew && cached !== null) {
+            return callback(null, cached);
+        }
+
+        // 1. get new token
+        const xhr = new XMLHttpRequest();
+
+        xhr.open('POST', 'https://saghul.jitsi.net/get-token');
+        xhr.setRequestHeader('Content-Type', 'application/json; charset=UTF-8');
+        xhr.onload = function() {
+            // Did we get 200 OK response?
+            if (xhr.status === 200) {
+                // Get token and send it to callback
+                const resp = JSON.parse(xhr.responseText);
+
+                cached = resp.token;
+
+                return callback(null, resp.token);
+            }
+
+            // if uncorrectable error happens, inform callstats.io
+            return callback('Unknown error');
+        };
+
+        xhr.send(JSON.stringify({ userId }));
+    };
 }
 
 /* eslint-enable no-invalid-this */
