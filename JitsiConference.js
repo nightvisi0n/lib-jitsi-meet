@@ -256,8 +256,6 @@ JitsiConference.prototype._init = function(options = {}) {
     this.room.addListener(
         XMPPEvents.CONNECTION_ESTABLISHED, this._onIceConnectionEstablished);
 
-    this.room.updateDeviceAvailability(RTC.getDeviceAvailability());
-
     this._updateProperties = this._updateProperties.bind(this);
     this.room.addListener(XMPPEvents.CONFERENCE_PROPERTIES_CHANGED,
         this._updateProperties);
