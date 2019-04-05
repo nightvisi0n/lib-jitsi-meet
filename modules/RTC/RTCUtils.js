@@ -1210,8 +1210,7 @@ class RTCUtils extends Listenable {
                 video: (...args) =>
                     this.getUserMediaWithConstraints([ 'video' ], ...args),
                 desktop: (...args) =>
-                    screenObtainer.obtainStream(
-                        this._parseDesktopSharingOptions(options), ...args)
+                    this._newGetDesktopMedia({}, ...args)
             };
 
             obtainDevices({

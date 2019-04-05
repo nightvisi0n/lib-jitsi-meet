@@ -142,7 +142,7 @@ const ScreenObtainer = {
 
             // Legacy Firefox
             return this.obtainScreenOnFirefox;
-        } else if (browser.isEdge() && browser.supportsGetDisplayMedia()) {
+        } else if (browser.supportsGetDisplayMedia()) {
             return this.obtainScreenFromGetDisplayMedia;
         }
 
@@ -314,18 +314,20 @@ const ScreenObtainer = {
             getDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
         }
 
+        console.log('YYYY: getDisplayMedia ' + getDisplayMedia);
+
         getDisplayMedia({ video: true })
             .then(stream => {
                 let applyConstraintsPromise;
 
-                if (stream
-                    && stream.getTracks()
-                    && stream.getTracks().length > 0) {
-                    applyConstraintsPromise = stream.getTracks()[0]
-                        .applyConstraints(options.trackOptions);
-                } else {
+                //if (stream
+                //    && stream.getTracks()
+                //    && stream.getTracks().length > 0) {
+                //    applyConstraintsPromise = stream.getTracks()[0]
+                //        .applyConstraints(options.trackOptions);
+                //} else {
                     applyConstraintsPromise = Promise.resolve();
-                }
+                //}
 
                 applyConstraintsPromise.then(() =>
                     callback({
