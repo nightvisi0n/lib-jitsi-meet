@@ -94,6 +94,9 @@ export class E2EEncryption {
         this._olmAdapter.on(
             OlmAdapter.events.PARTICIPANT_KEY_UPDATED,
             this._onParticipantKeyUpdated.bind(this));
+        this._olmAdapter.on(
+            OlmAdapter.events.PARTICIPANT_SAS_READY,
+            this._onParticipantSasReady.bind(this));
     }
 
     /**
@@ -159,6 +162,25 @@ export class E2EEncryption {
             // Set our key so we begin encrypting.
             this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
         });
+    }
+
+    /**
+     * Marks the given participant as verified. This should be called after the user has compared the SAS and they
+     * match. Then MAC comparisons will happen and an event will be emitted with the verification result.
+     *
+     * @param {string} participantId - The participant which will be marked as verified.
+     * @returns {void}
+     */
+    markVerified(participantId) {
+        const participant = this.conference.getParticipantById(participantId);
+
+        if (!participant) {
+            logger.warn('Participant not found, cannot mark as verified');
+
+            return;
+        }
+
+        this._olmAdapter.sasVerified(participant);
     }
 
     /**
@@ -244,6 +266,14 @@ export class E2EEncryption {
      */
     _onParticipantE2EEChannelReady(id) {
         logger.debug(`E2EE channel with participant ${id} is ready`);
+
+        const myId = this.conference.myUserId();
+        const participant = this.conference.getParticipantById(id);
+
+        if (participant && myId < id) {
+            logger.debug(`Starting verification for participant ${id}`);
+            this._olmAdapter.startVerification(participant);
+        }
     }
 
     /**
@@ -271,9 +301,6 @@ export class E2EEncryption {
      */
     async _onParticipantPropertyChanged(participant, name, oldValue, newValue) {
         switch (name) {
-        case 'e2ee.idKey':
-            logger.debug(`Participant ${participant.getId()} updated their id key: ${newValue}`);
-            break;
         case 'e2ee.signatureKey':
             logger.debug(`Participant ${participant.getId()} updated their signature key: ${newValue}`);
             if (newValue) {
@@ -288,6 +315,18 @@ export class E2EEncryption {
             }
             break;
         }
+    }
+
+    /**
+     * Notifies the library about the SAS computed for a given participant.
+     *
+     * @param {string} id - The participant ID.
+     * @param {object} sas - The Short Auithentication String (SAS) used for verification. It contains several.
+     * @private
+     */
+    _onParticipantSasReady(id, sas) {
+        logger.debug(`Participant ${id} SAS ready`);
+        logger.debug(sas);
     }
 
     /**

@@ -3446,6 +3446,23 @@ JitsiConference.prototype.isE2EESupported = function() {
 };
 
 /**
+ * Marks the given participant as verified. After this is done, MAC verification will
+ * be performed and an event will be emitted with the result.
+ *
+ * @param {string} participantId The participant which will be marked as verified.
+ * @returns {void}
+ */
+JitsiConference.prototype.markParticipantVerified = function(participantId) {
+    if (!this._isE2EEEnabled()) {
+        logger.warn('Cannot verify participant, E2EE is not enabled');
+
+        return;
+    }
+
+    this._e2eEncryption.markVerified(participantId);
+};
+
+/**
  * Enables / disables End-to-End encryption.
  *
  * @param {boolean} enabled whether to enable E2EE or not.

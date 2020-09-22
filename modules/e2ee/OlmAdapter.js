@@ -10,6 +10,8 @@ import Deferred from '../util/Deferred';
 import Listenable from '../util/Listenable';
 import { JITSI_MEET_MUC_TYPE } from '../xmpp/xmpp';
 
+import { generateSas } from './SAS';
+
 const logger = getLogger(__filename);
 
 const REQ_TIMEOUT = 5 * 1000;
@@ -18,15 +20,24 @@ const OLM_MESSAGE_TYPES = {
     ERROR: 'error',
     KEY_INFO: 'key-info',
     KEY_INFO_ACK: 'key-info-ack',
+    SAS_INIT: 'sas-init',
+    SAS_ACK: 'sas-ack',
+    SAS_MAC: 'sas-mac',
+    SAS_DONE: 'sas-done',
     SESSION_ACK: 'session-ack',
     SESSION_INIT: 'session-init'
 };
+const OLM_KEY_VERIFICATION_MAC_INFO = 'Jitsi-KEY_VERIFICATION_MAC';
+const OLM_KEY_VERIFICATION_MAC_KEY_IDS = 'Jitsi-KEY_IDS';
+const OLM_SAS_EXTRA_INFO = 'Jitsi-SAS';
+const OLM_SAS_NUM_BYTES = 6;
 
 const kOlmData = Symbol('OlmData');
 
 const OlmAdapterEvents = {
     OLM_ID_KEYS_READY: 'olm.id_keys_ready',
     PARTICIPANT_E2EE_CHANNEL_READY: 'olm.participant_e2ee_channel_ready',
+    PARTICIPANT_SAS_READY: 'olm.participant_sas_ready',
     PARTICIPANT_KEY_UPDATED: 'olm.partitipant_key_updated'
 };
 
@@ -82,6 +93,15 @@ export class OlmAdapter extends Listenable {
      */
     static isSupported() {
         return typeof window.Olm !== 'undefined';
+    }
+
+    /**
+     * Returns the current participants conference ID.
+     *
+     * @returns {string}
+     */
+    get myId() {
+        return this._conf.myUserId();
     }
 
     /**
@@ -157,6 +177,65 @@ export class OlmAdapter extends Listenable {
         // TODO: retry failed ones?
 
         return this._keyIndex;
+    }
+
+    /**
+     * Mark the SAS as verified for the given participant.
+     *
+     * @param {JitsiParticipant} participant - The target participant.
+     * @returns {void}
+     */
+    sasVerified(participant) {
+        const olmData = this._getParticipantOlmData(participant);
+
+        if (olmData.sas && olmData.sas.is_their_key_set() && !olmData.sasMacSent) {
+            this._sendSasMac(participant);
+
+            // Mark the MAC as sent so we don't send it multiple times.
+            olmData.sasMacSent = true;
+
+            return;
+        }
+
+        logger.warn('Cannot mark SAS verified');
+    }
+
+    /**
+     * Starts the verification process for the given participant.
+     *
+     * @param {JitsiParticipant} participant - The target participant.
+     * @returns {Promise<void>}
+     * @private
+     */
+    async startVerification(participant) {
+        const pId = participant.getId();
+        const olmData = this._getParticipantOlmData(participant);
+
+        if (!olmData.session) {
+            logger.warn(`Tried to start verification with participant ${pId} but we have no session`);
+
+            return;
+        }
+
+        if (!olmData.sas) {
+            olmData.sas = new Olm.SAS();
+
+            const data = {
+                [JITSI_MEET_MUC_TYPE]: OLM_MESSAGE_TYPE,
+                olm: {
+                    type: OLM_MESSAGE_TYPES.SAS_INIT,
+                    data: {
+                        // TODO: send a commitment first.
+                        key: olmData.sas.get_pubkey(),
+                        uuid: uuidv4
+                    }
+                }
+            };
+
+            this._sendMessage(data, pId);
+
+            // TODO: handle failures. Reschedule?
+        }
     }
 
     /**
@@ -430,6 +509,152 @@ export class OlmAdapter extends Listenable {
             }
             break;
         }
+        case OLM_MESSAGE_TYPES.SAS_INIT: {
+            if (olmData.session) {
+                if (olmData.sas) {
+                    logger.warn(`SAS already created for participant ${pId}`);
+
+                    return;
+                }
+
+                const { key, uuid } = msg.data;
+
+                olmData.sas = new Olm.SAS();
+                olmData.sas.set_their_key(key);
+
+                // Build SAS info: <token>|<starting participant ID>-<other participant ID>-<transaction ID>
+                const info = `${OLM_SAS_EXTRA_INFO}|${pId}-${this.myId}-${uuid}`;
+
+                const sasBytes = olmData.sas.generate_bytes(info, OLM_SAS_NUM_BYTES);
+                const sas = generateSas(sasBytes);
+
+                this.eventEmitter.emit(OlmAdapterEvents.PARTICIPANT_SAS_READY, pId, sas);
+
+                // Send ACK.
+                const ack = {
+                    [JITSI_MEET_MUC_TYPE]: OLM_MESSAGE_TYPE,
+                    olm: {
+                        type: OLM_MESSAGE_TYPES.SAS_ACK,
+                        data: {
+                            key: olmData.sas.get_pubkey(),
+                            uuid
+                        }
+                    }
+                };
+
+                this._sendMessage(ack, pId);
+            } else {
+                logger.debug(`Received sas init message from ${pId} but we have no session for them!`);
+
+                this._sendError(participant, 'No session found while processing sas-init');
+            }
+            break;
+        }
+        case OLM_MESSAGE_TYPES.SAS_ACK: {
+            if (olmData.session) {
+                if (!olmData.sas) {
+                    logger.warn(`SAS already created for participant ${pId}`);
+
+                    return;
+                }
+
+                const { key, uuid } = msg.data;
+
+                if (olmData.sas.is_their_key_set()) {
+                    logger.warn('SAS already has their key!');
+
+                    return;
+                }
+
+                olmData.sas.set_their_key(key);
+
+                // Build SAS info: <token>|<starting participant ID>-<other participant ID>-<transaction ID>
+                const info = `${OLM_SAS_EXTRA_INFO}|${this.myId}-${pId}-${uuid}`;
+
+                const sasBytes = olmData.sas.generate_bytes(info, OLM_SAS_NUM_BYTES);
+                const sas = generateSas(sasBytes);
+
+                this.eventEmitter.emit(OlmAdapterEvents.PARTICIPANT_SAS_READY, pId, sas);
+            } else {
+                logger.debug(`Received sas ack message from ${pId} but we have no session for them!`);
+
+                this._sendError(participant, 'No session found while processing sas-ack');
+            }
+            break;
+        }
+        case OLM_MESSAGE_TYPES.SAS_MAC: {
+            if (olmData.session) {
+                if (!olmData.sas) {
+                    logger.warn(`SAS already created for participant ${pId}`);
+
+                    return;
+                }
+
+                const { keys, mac, uuid } = msg.data;
+
+                if (!mac || !keys) {
+                    logger.warn('Invalid SAS MAC message');
+
+                    return;
+                }
+
+                // Verify the received MACs.
+
+                const baseInfo = `${OLM_KEY_VERIFICATION_MAC_INFO}${pId}${this.myId}${uuid}`;
+                const keysMac = olmData.sas.calculate_mac(
+                    Object.keys(mac).sort().join(','), // eslint-disable-line newline-per-chained-call
+                    baseInfo + OLM_KEY_VERIFICATION_MAC_KEY_IDS,
+                );
+
+                if (keysMac !== keys) {
+                    logger.error('SAS verification error: keys MAC mismatch');
+
+                    // TODO: emit event.
+                    return;
+                }
+
+                for (const [ keyInfo, computedMac ] of Object.entries(mac)) {
+                    const keyType = keyInfo.split(':')[0];
+                    const pubKey = participant.getProperty(`e2ee.idKey.${keyType}`);
+
+                    if (!pubKey) {
+                        logger.warn(`Could not get ${keyType} public key for participant ${pId}`);
+
+                        return;
+                    }
+
+                    const ourComputedMac = olmData.sas.calculate_mac(
+                        pubKey,
+                        baseInfo + keyInfo
+                    );
+
+                    if (computedMac !== ourComputedMac) {
+                        logger.error('SAS verification error: MAC mismatch');
+
+                        return;
+                    }
+                }
+
+                // At this point all MACs are verified, so we can mark the user as verified.
+                // We'll now send our own MACs.
+                if (!olmData.sasMacSent) {
+                    this._sendSasMac(participant);
+                    olmData.sasMacSent = true;
+                }
+
+                this.eventEmitter.emit(OlmAdapterEvents.OLM_SAS_VERIFIED, pId);
+                logger.info(`SAS MAC verified for participant ${pId}`);
+            } else {
+                logger.debug(`Received sas mac message from ${pId} but we have no session for them!`);
+
+                this._sendError(participant, 'No session found while processing sas-ack');
+            }
+            break;
+        }
+        default: {
+            logger.error(`Unknown message type: ${msg.type}`);
+            break;
+        }
         }
 
     }
@@ -447,6 +672,11 @@ export class OlmAdapter extends Listenable {
         if (olmData.session) {
             olmData.session.free();
             olmData.session = undefined;
+        }
+
+        if (olmData.sas) {
+            olmData.sas.free();
+            olmData.sas = undefined;
         }
     }
 
@@ -482,6 +712,45 @@ export class OlmAdapter extends Listenable {
      */
     _sendMessage(data, participantId) {
         this._conf.sendMessage(data, participantId);
+    }
+
+    /**
+     * Builds and sends the SAS MAC message to the given participant.
+     */
+    _sendSasMac(participant) {
+        const pId = participant.getId();
+        const olmData = this._getParticipantOlmData(participant);
+        const uuid = uuidv4();
+
+        // Calculate and send MAC with the keys to be verified.
+        const mac = {};
+        const keyList = [];
+        const baseInfo = `${OLM_KEY_VERIFICATION_MAC_INFO}${this.myId}${pId}${uuid}`;
+        const deviceKeyId = `ed25519:${this.myId}`;
+
+        mac[deviceKeyId] = olmData.sas.calculate_mac(
+            this._idKeys.ed25519,
+            baseInfo + deviceKeyId);
+        keyList.push(deviceKeyId);
+
+        const keys = olmData.sas.calculate_mac(
+            keyList.sort().join(','),
+            baseInfo + OLM_KEY_VERIFICATION_MAC_KEY_IDS,
+        );
+
+        const data = {
+            [JITSI_MEET_MUC_TYPE]: OLM_MESSAGE_TYPE,
+            olm: {
+                type: OLM_MESSAGE_TYPES.SAS_MAC,
+                data: {
+                    keys,
+                    mac,
+                    uuid
+                }
+            }
+        };
+
+        this._sendMessage(data, pId);
     }
 
     /**
