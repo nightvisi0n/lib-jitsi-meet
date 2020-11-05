@@ -86,8 +86,8 @@ export class E2EEncryption {
 
         // Olm signalling events.
         this._olmAdapter.on(
-            OlmAdapter.events.OLM_ID_KEY_READY,
-            this._onOlmIdKeyReady.bind(this));
+            OlmAdapter.events.OLM_ID_KEYS_READY,
+            this._onOlmIdKeysReady.bind(this));
         this._olmAdapter.on(
             OlmAdapter.events.PARTICIPANT_E2EE_CHANNEL_READY,
             this._onParticipantE2EEChannelReady.bind(this));
@@ -196,14 +196,20 @@ export class E2EEncryption {
     }
 
     /**
-     * Publushes our own Olmn id key in presence.
+     * Publushes our own Olmn id keys in presence.
      * @private
      */
-    _onOlmIdKeyReady(idKey) {
-        logger.debug(`Olm id key ready: ${idKey}`);
+    _onOlmIdKeysReady(idKeys) {
+        logger.debug('Olm id keys ready');
 
         // Publish it in presence.
-        this.conference.setLocalParticipantProperty('e2ee.idKey', idKey);
+        for (const keyType in idKeys) {
+            if (idKeys.hasOwnProperty(keyType)) {
+                const key = idKeys[keyType];
+
+                this.conference.setLocalParticipantProperty(`e2ee.idKey.${keyType}`, key);
+            }
+        }
     }
 
     /**

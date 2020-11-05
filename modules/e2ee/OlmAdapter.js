@@ -25,7 +25,7 @@ const OLM_MESSAGE_TYPES = {
 const kOlmData = Symbol('OlmData');
 
 const OlmAdapterEvents = {
-    OLM_ID_KEY_READY: 'olm.id_key_ready',
+    OLM_ID_KEYS_READY: 'olm.id_keys_ready',
     PARTICIPANT_E2EE_CHANNEL_READY: 'olm.participant_e2ee_channel_ready',
     PARTICIPANT_KEY_UPDATED: 'olm.partitipant_key_updated'
 };
@@ -170,18 +170,18 @@ export class OlmAdapter extends Listenable {
             this._olmAccount = new Olm.Account();
             this._olmAccount.create();
 
-            const idKeys = JSON.parse(this._olmAccount.identity_keys());
-
-            this._idKey = idKeys.curve25519;
+            // Store the Olm ID keys. There are 2 of them:
+            //  - curve25519: identity key pair.
+            //  - ed25519: fingerprint key pair.
+            this._idKeys = JSON.parse(this._olmAccount.identity_keys());
 
             logger.debug(`Olm ${Olm.get_library_version().join('.')} initialized`);
             this._init.resolve();
-            this.eventEmitter.emit(OlmAdapterEvents.OLM_ID_KEY_READY, this._idKey);
+            this.eventEmitter.emit(OlmAdapterEvents.OLM_ID_KEYS_READY, this._idKeys);
         } catch (e) {
             logger.error('Failed to initialize Olm', e);
             this._init.reject(e);
         }
-
     }
 
     /**
@@ -522,7 +522,7 @@ export class OlmAdapter extends Listenable {
             olm: {
                 type: OLM_MESSAGE_TYPES.SESSION_INIT,
                 data: {
-                    idKey: this._idKey,
+                    idKey: this._idKeys.curve25519,
                     otKey,
                     uuid
                 }
