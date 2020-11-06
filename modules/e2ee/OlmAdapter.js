@@ -116,7 +116,11 @@ export class OlmAdapter extends Listenable {
             const pId = participant.getId();
             const olmData = this._getParticipantOlmData(participant);
 
-            // TODO: skip those who don't support E2EE.
+            // Skip participants without support for E2EE.
+            if (!participant.getProperty('features_e2ee')) {
+                // eslint-disable-next-line no-continue
+                continue;
+            }
 
             if (!olmData.session) {
                 logger.warn(`Tried to send key to participant ${pId} but we have no session`);
@@ -232,13 +236,13 @@ export class OlmAdapter extends Listenable {
         // We are forcing the last user to join the conference to start the exchange
         // so we can send some pre-established secrets in the ACK.
         for (const participant of this._conf.getParticipants()) {
+            // Don't skip any participant since we might not have received their features yet.
             promises.push(this._sendSessionInit(participant));
         }
 
         await Promise.allSettled(promises);
 
         // TODO: retry failed ones.
-        // TODO: skip participants which don't support E2EE.
     }
 
     /**
