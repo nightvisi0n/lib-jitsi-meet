@@ -84,17 +84,21 @@ export default class Lobby {
 
     /**
      * Leaves the lobby room.
-     * @private
+     *
+     * @returns {Promise}
      */
-    _leaveLobbyRoom() {
+    leave() {
         if (this.lobbyRoom) {
-            this.lobbyRoom.leave()
+            return this.lobbyRoom.leave()
                 .then(() => {
                     this.lobbyRoom = undefined;
                     logger.info('Lobby room left!');
                 })
                 .catch(() => {}); // eslint-disable-line no-empty-function
         }
+
+        return Promise.reject(
+                new Error('The lobby has already been left'));
     }
 
     /**
@@ -223,10 +227,8 @@ export default class Lobby {
                 (roomJid, from, txt, invitePassword) => {
                     logger.debug(`Received approval to join ${roomJid} ${from} ${txt}`);
                     if (roomJid === this.mainRoom.roomjid) {
-                        // we are now allowed let's join and leave lobby
+                        // we are now allowed, so let's join
                         this.mainRoom.join(invitePassword);
-
-                        this._leaveLobbyRoom();
                     }
                 });
             this.lobbyRoom.addEventListener(
@@ -250,7 +252,7 @@ export default class Lobby {
             this.mainRoom.addEventListener(
                 XMPPEvents.MUC_JOINED,
                 () => {
-                    this._leaveLobbyRoom();
+                    this.leave();
                 });
         }
 
@@ -293,6 +295,18 @@ export default class Lobby {
     }
 
     /**
+     * Build main room jid from a breakout room jid.
+     * @param jid - Jid for a main or breakout room.
+     */
+    getMainRoomJidFromRoomJid(jid) {
+        const mainMucDomain = this.mainRoom.options.hosts.muc;
+        const isInBreakoutRoom = mainMucDomain !== Strophe.getDomainFromJid(jid);
+        const node = Strophe.getNodeFromJid(jid);
+
+        return isInBreakoutRoom ? `${node.substr(0, node.lastIndexOf('_'))}@${mainMucDomain}` : jid;
+    }
+
+    /**
      * Should be possible only for moderators.
      * @param id
      */
@@ -307,7 +321,7 @@ export default class Lobby {
         if (memberRoomJid) {
             const jid = this.lobbyRoom.members[memberRoomJid].jid;
             const msgToSend
-                = $msg({ to: this.mainRoom.roomjid })
+                = $msg({ to: this.getMainRoomJidFromRoomJid(this.mainRoom.roomjid) })
                     .c('x', { xmlns: 'http://jabber.org/protocol/muc#user' })
                     .c('invite', { to: jid });
 
