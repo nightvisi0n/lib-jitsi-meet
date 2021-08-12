@@ -58,7 +58,11 @@ module.exports = (minimize, analyzeBundle) => {
                         '@babel/plugin-proposal-nullish-coalescing-operator'
                     ]
                 },
-                test: /\.js$/
+                test: /\.(js|ts)$/
+            }, {
+                exclude: /node_modules/,
+                test: /\.ts$/,
+                use: 'ts-loader'
             } ]
         },
         node: {
