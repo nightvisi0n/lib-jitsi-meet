@@ -3873,3 +3873,12 @@ JitsiConference.prototype.avModerationReject = function(mediaType, id) {
             this.room && this.isModerator() ? 'wrong media type passed' : ''}`);
     }
 };
+
+/**
+ * Returns <tt>true</tt> if Breakout Rooms support is enabled in the backend.
+ *
+ * @returns {boolean} whether Breakout Rooms is supported in the backend.
+ */
+JitsiConference.prototype.isBreakoutRoomsSupported = function() {
+    return Boolean(this.room?.getBreakoutRoomsHelper().isSupported());
+};

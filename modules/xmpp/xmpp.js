@@ -449,6 +449,10 @@ export default class XMPP extends Listenable {
             if (identity.type === 'region') {
                 this.options.deploymentInfo.region = this.connection.region = identity.name;
             }
+
+            if (identity.type === 'breakout_rooms') {
+                this.breakoutRoomsComponentAddress = identity.name;
+            }
         });
 
         if (this.avModerationComponentAddress
