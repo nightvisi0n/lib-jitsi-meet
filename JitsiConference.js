@@ -3882,3 +3882,12 @@ JitsiConference.prototype.avModerationReject = function(mediaType, id) {
 JitsiConference.prototype.isBreakoutRoomsSupported = function() {
     return Boolean(this.room?.getBreakoutRoomsHelper().isSupported());
 };
+
+/**
+ * Returns <tt>true</tt> if this room is a breakout room.
+ *
+ * @returns {boolean} whether this is a breakout room or not.
+ */
+JitsiConference.prototype.isBreakoutRoom = function() {
+    return Boolean(this.room?.getBreakoutRoomsHelper().isBreakoutRoom());
+};
